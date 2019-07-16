@@ -9,7 +9,7 @@ const urlSettings = {
 }
 const imageType = 'jpeg'
 const directoryPath = path.resolve(__dirname, 'itemImages')
-const viewSetting = { width: 1280, height: 720 }
+const viewSetting = { width: 1920, height: 1080 }
 
 const url = `${urlSettings.domain}/${urlSettings.path}?${urlSettings.query}`
 
@@ -24,24 +24,12 @@ const createFolder = async dir => {
 }
 
 const removeFolder = async dir => {
-  if (fs.existsSync(dir)) {
-    try {
-      await fs.unlinkSync(dir)
-    } catch (err) {
-      console.error(err)
-    }
-  }
-}
-
-const deleteFolderRecursive = path => {
   if (fs.existsSync(path)) {
     fs.readdirSync(path).forEach(function(file) {
       var curPath = path + '/' + file
       if (fs.lstatSync(curPath).isDirectory()) {
-        // recurse
         deleteFolderRecursive(curPath)
       } else {
-        // delete file
         fs.unlinkSync(curPath)
       }
     })
@@ -49,9 +37,11 @@ const deleteFolderRecursive = path => {
   }
 }
 
+const finish = async browser => await browser.close()
+
 const init = async () => {
   // Manage directory
-  await deleteFolderRecursive(directoryPath)
+  await removeFolder(directoryPath)
   await createFolder(directoryPath)
 
   const browser = await puppeteer.launch({
@@ -61,14 +51,17 @@ const init = async () => {
   const page = await browser.newPage()
   await page.setViewport(viewSetting)
   await page.goto(url, { waitUntil: 'networkidle0' })
-  // await page.evaluate(async () => {
-  //   await window.scrollBy(0, 500)
-  //   return Promise.resolve
-  // })
-  // await page.evaluate(async () => {
-  //   await window.scrollBy(0, 0)
-  //   return Promise.resolve
-  // })
+
+  // Remove some elements
+  await page.evaluate(
+    selectors => {
+      selectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector)
+        elements.forEach(element => element.parentNode.removeChild(element))
+      })
+    },
+    ['.flash-sale-banner', '.flash-sale-session-picker']
+  )
 
   async function screenshotDOMElement(path = null, element, padding = 0) {
     if (!element) throw Error('Please provide a element.')
@@ -98,13 +91,18 @@ const init = async () => {
   const items = await page.$$('div.flash-sale-item-card')
   await console.log('itemsCount: ', items.length)
 
+  let counter = 0
   await items.map(
     async (element, index) =>
-      await screenshotDOMElement(genPath(index + 1), element).catch(error => console.error(error))
+      await screenshotDOMElement(genPath(index + 1), element)
+        .then(() => {
+          if (counter === items.length - 1) {
+            finish(browser)
+          }
+          counter += 1
+        })
+        .catch(error => console.error(error))
   )
-  await console.log('=== BEFORE ===')
-  // await browser.close()
-  await console.log('=== CLOSED ===')
 }
 
 init()
